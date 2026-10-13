@@ -1,0 +1,38 @@
+# 统一换行策略（仓库级，随代码走，不依赖各人 core.autocrlf 配置）
+#
+# 背景：Windows 默认 core.autocrlf=true 会把「被误判为文本」的二进制文件
+# 做 LF/CRLF 转换 —— PDF/DOCX 被转换后直接损坏，clone 下来无法打开。
+# 因此必须显式声明二进制类型。
+
+# 文本文件：入库与工作区统一 LF（Python / JS / HTML / MD / JSON / YAML 等）
+* text=auto eol=lf
+
+# Windows 批处理脚本：必须保留 CRLF（旧版 cmd 对 LF 结尾的标签跳转不友好）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件：禁止任何换行转换
+*.pdf   binary
+*.docx  binary
+*.doc   binary
+*.xlsx  binary
+*.pptx  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.bmp   binary
+*.tif   binary
+*.tiff  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.zip   binary
+*.gz    binary
+*.7z    binary
+*.onnx  binary
+*.bin   binary
