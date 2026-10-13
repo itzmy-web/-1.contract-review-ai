@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    container_name: contract-review
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./reports:/app/reports
+    # 生产建议开启访问密钥：把下面取消注释并改成你的密钥（见部署指南"安全加固"）
+    # environment:
+    #   API_AUTH_KEY: "改成你的密钥"

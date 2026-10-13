@@ -1,0 +1,30 @@
+# 排除本地开发产物，避免打进镜像
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.idea/
+.vscode/
+
+# 运行时数据（用 volume 挂载，不打进镜像）
+uploads/
+reports/
+data/
+
+# 敏感配置（通过 docker-compose 的 env_file 注入，不进镜像）
+.env
+.env.example
+
+# 本地杂项
+*.log
+server*.log
+tests/
+评估测试集.md
+OCR识别测评集.md
+benchmark_answers.json
+eval_bench.py
+识别结果_真实合同.md
+识别准确性评估报告.md
+交付文档.md
+start_public.bat

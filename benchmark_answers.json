@@ -1,0 +1,103 @@
+{
+  "说明": "人工标注的标准答案：key=图片文件名，value=期望抽取的字段。不适用/无法判定的字段留空字符串或省略，评测时该字段不计入准确率分母。",
+  "samples": [
+    {
+      "file": "2b0630f7020c213bf0064df12054d140.jpg",
+      "level": "S",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "",
+        "counterparty": "上海知飞航空科技有限公司",
+        "credit_code": "",
+        "amount": 13000,
+        "currency": "人民币",
+        "performance_period": "2025年3月10日至2025年9月1日"
+      }
+    },
+    {
+      "file": "2f8c8669a1b039cc9b295d06e9de0d3b.jpg",
+      "level": "A",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "",
+        "counterparty": "",
+        "credit_code": "",
+        "amount": 0,
+        "currency": "",
+        "performance_period": ""
+      }
+    },
+    {
+      "file": "04e8aa4c231f76ada3e242ba4c6e1f12.jpg",
+      "level": "A",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "",
+        "counterparty": "",
+        "credit_code": "",
+        "amount": 0,
+        "currency": "",
+        "performance_period": ""
+      }
+    },
+    {
+      "file": "34d06fc905b1474a8d9532477827b12e.jpg",
+      "level": "S",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "洛阳华澄机床设备有限公司",
+        "counterparty": "洛阳突元机械有限公司",
+        "credit_code": "914103037982097691",
+        "amount": 33200,
+        "currency": "人民币",
+        "performance_period": ""
+      }
+    },
+    {
+      "file": "7757010c217689779c8b2b8a5762de28.png",
+      "level": "A",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "",
+        "counterparty": "",
+        "credit_code": "",
+        "amount": 0,
+        "currency": "",
+        "performance_period": ""
+      }
+    },
+    {
+      "file": "a162ab84e43d2fe7445a0480828e4be2.png",
+      "level": "B",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "安徽一八一九企业孵化器管理有限公司",
+        "counterparty": "",
+        "credit_code": "",
+        "amount": 0,
+        "currency": "",
+        "performance_period": ""
+      }
+    },
+    {
+      "file": "d8c2520121a31c17bbcf21140a0c1183.png",
+      "level": "B",
+      "expect": {
+        "contract_no": "",
+        "department": "",
+        "subject_name": "",
+        "counterparty": "池州中迪汽车销售服务有限公司",
+        "credit_code": "",
+        "amount": 5000,
+        "currency": "",
+        "performance_period": ""
+      }
+    }
+  ]
+}
