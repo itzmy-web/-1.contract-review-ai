@@ -31,7 +31,7 @@ from .models import (
 from .parsers import IMAGE_EXTS
 from .review import run_review, run_review_on_text
 from .rules import REQUIRED_CLAUSES
-from .samples import seed_samples
+from .samples import seed_demo_tasks, seed_samples
 from .writeback import MockApprovalSystem, approval
 
 # ---------------- 角色与权限（PRD 2.4.2） ----------------
@@ -63,6 +63,10 @@ ROLE_PERMS: dict[str, dict] = {
 ALL_PERMS = ["view", "submit", "export", "manage_rules", "monitor", "retry",
              "config_approval", "adopt", "edit_suggestion", "annotate", "writeback",
              "manage_audit", "audit_finding", "audit_review", "rectify", "edit_contract"]
+
+# 演示身份登录开关（默认开启）：登录页可直接选定「登录身份」进入，
+# 后端按 X-Role 解析角色，不依赖 JWT 签名密钥。设为 0 即关闭，只允许账号登录。
+DEMO_ROLE_LOGIN = str(os.getenv("DEMO_ROLE_LOGIN", "1")).strip().lower() not in ("0", "false", "no", "off")
 
 
 def _role_label(role: str) -> str:
@@ -111,14 +115,28 @@ def decode_token(token: str):
 
 
 def get_current_user(request: Request):
-    """从 Authorization: Bearer <token> 解析当前用户；未带/失效令牌一律 401。"""
+    """解析当前用户，支持两种通道：
+
+    ① **账号通道**：Authorization: Bearer <JWT> —— 注册/登录用户，角色由服务端签发；
+    ② **演示通道**：X-Role: <角色键> —— 登录页「登录身份」直接选定身份进入
+       （演示/评审场景，不依赖 JWT 签名密钥，避免部署环境密钥轮换导致全站 401）。
+
+    演示通道由 DEMO_ROLE_LOGIN 开关控制（默认开）；生产可通过环境变量关闭，
+    关闭后仅接受 JWT，未带令牌一律 401。
+    """
     auth = (request.headers.get("Authorization") or "").strip()
-    if not auth.startswith("Bearer "):
-        raise HTTPException(401, "未登录：请先登录获取访问令牌")
-    payload = decode_token(auth[7:].strip())
-    if not payload:
+    if auth.startswith("Bearer "):
+        payload = decode_token(auth[7:].strip())
+        if payload:
+            return payload
         raise HTTPException(401, "登录已失效，请重新登录")
-    return payload
+    if DEMO_ROLE_LOGIN:
+        role = (request.headers.get("X-Role") or "").strip()
+        if role in ROLE_PERMS:
+            return {"sub": role, "role": role,
+                    "name": ROLE_PERMS[role].get("person") or ROLE_PERMS[role]["name"],
+                    "demo": True}
+    raise HTTPException(401, "未登录：请先选择登录身份，或使用账号登录")
 
 
 def require_perm(request: Request, perm: str) -> None:
@@ -272,10 +290,14 @@ def _audit_actor(request: Request) -> str:
             sub = (payload.get("sub") or "").strip()
             who = name or sub or role
             return f"{who}（{role}）" if role else (who or "已登录用户")
+    # 演示通道：X-Role 是「登录身份」的直接来源，优先于 X-User——
+    # 否则审计留痕只会记下前端账号串（如 wechat_scan），看不出"谁以什么角色做了什么"。
+    role = (request.headers.get("X-Role") or "").strip()
+    if role in ROLE_PERMS:
+        return f"{_role_label(role)}（{role}）"
     u = (request.headers.get("X-User") or "").strip()
     if u:
         return u
-    role = request.headers.get("X-Role") or ""
     return _role_label(role) if role else "匿名（未携带令牌）"
 
 
@@ -1030,6 +1052,32 @@ def get_roles():
     return JSONResponse(content=ROLE_PERMS)
 
 
+@app.get("/api/auth/mode")
+def auth_mode():
+    """前端据此决定登录页展示「登录身份」下拉还是纯账号登录。"""
+    return JSONResponse(content={"demo_role_login": DEMO_ROLE_LOGIN})
+
+
+@app.post("/api/login-role")
+def login_role(request: Request, req: dict):
+    """演示通道登录：登录页选定「登录身份」即进入（无需密码、无需令牌）。
+
+    与账号通道（/api/login → JWT）并列存在：账号通道用于注册用户，
+    演示通道用于评审/演示时快速切换 7 种角色查看权限矩阵差异。
+    """
+    if not DEMO_ROLE_LOGIN:
+        raise HTTPException(403, "演示身份登录已关闭，请使用账号密码登录")
+    role = (req.get("role") or "").strip()
+    if role not in ROLE_PERMS:
+        raise HTTPException(400, "无效的登录身份")
+    r = ROLE_PERMS[role]
+    label = f"{r['name']} {r.get('person', '')}".strip()
+    store.add_audit(label, "POST", "/api/login-role", 200)
+    return JSONResponse(content={"ok": True, "role": role, "name": r["name"],
+                                 "person": r.get("person", ""), "perms": r["perms"],
+                                 "demo": True})
+
+
 # ---------------- 审计（查看面板与审计） ----------------
 @app.get("/api/audit")
 def get_audit(request: Request, limit: int = 200):
@@ -1143,6 +1191,59 @@ def compare_texts(request: Request, req: dict):
 # ---------------- 审计项目与底稿（PRD 三：审计作业与底稿管理） ----------------
 AUDIT_PROJECTS: list[dict] = []
 AUDIT_FINDINGS: list[dict] = []
+
+
+def seed_audit_demo() -> None:
+    """预置一个演示审计项目 + 若干审计发现，让「审计工作台」开箱即有内容。
+
+    背景：审计项目/底稿原先只存在进程内存里，服务一冷启动就是空列表 ——
+    页面只剩一个「+ 新建审计项目」按钮，看起来像"功能没做"。这里按真实
+    业务流程预置一套闭环数据（登记底稿 → 整改反馈 → 复核闭环），
+    既方便演示，也让统计卡（严重/一般/轻微、整改中、已完成、闭环率）有数可看。
+    """
+    if AUDIT_PROJECTS:
+        return
+    proj = {
+        "project_id": "AP-DEMO0001",
+        "name": "2026 年度采购合同专项审计",
+        "scope": [],                       # 审计范围（合同 task_id 列表），可由界面勾选补充
+        "members": ["赵六", "钱七"],        # 审计项目负责人 / 审计组员
+        "start_date": "2026-03-01",
+        "end_date": "2026-06-30",
+        "status": "active",
+        "created_by": "系统预置演示数据",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    AUDIT_PROJECTS.append(proj)
+    seed = [
+        ("付款条款缺少验收前置条件", "付款结算", "high", "open", "", ""),
+        ("违约金约定明显过高（合同总额 50%）", "法律风险", "high", "rectifying",
+         "已与对方协商下调至 20%，待法务复核条款文本", "2026-07-15"),
+        ("未约定知识产权归属", "法律风险", "medium", "rectifying",
+         "补充条款已起草，正在走内部审批", "2026-07-20"),
+        ("保密期限约定缺失", "法律风险", "medium", "done",
+         "已在补充协议中明确保密期至合同终止后 3 年", "2026-06-20"),
+        ("签署页缺少双方盖章位", "内控缺陷", "low", "done",
+         "已按模板补全签署页并重新用印", "2026-06-10"),
+        ("相对方营业执照未留存", "内控缺陷", "low", "open", "", "2026-07-31"),
+    ]
+    for title, cat, sev, st, rect, dl in seed:
+        AUDIT_FINDINGS.append({
+            "finding_id": "AF-" + uuid.uuid4().hex[:8].upper(),
+            "project_id": proj["project_id"],
+            "task_id": "", "contract_name": "（演示数据）",
+            "title": title, "category": cat, "severity": sev,
+            "snippet": "", "evidence": "",
+            "rectification": rect,
+            "deadline": dl,
+            "review_result": "复核通过，问题闭环" if st == "done" else "",
+            "status": st,
+            "created_by": "系统预置演示数据",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        })
+
+
+seed_audit_demo()
 
 
 @app.get("/api/audit-projects")
@@ -1345,28 +1446,100 @@ def login(req: dict):
 
 
 # ---------------- 法律条文库（PRD 规则页搜索 / 上传补充法律） ----------------
+# 每条都带「法律名称 + 条款号 + 分类 + 原文」，既支撑规则引擎的合规依据，
+# 也作为「法律条文库」页面的知识底座（评审/演示时可搜索、可引用）。
 LAWS: list[dict] = [
-    {"law_id": "L-C585", "law_name": "民法典", "article": "第585条",
-     "content": "当事人可以约定一方违约时应当根据违约情况向对方支付一定数额的违约金，也可以约定因违约产生的损失赔偿额的计算方法。约定的违约金过分高于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以适当减少。",
-     "category": "违约责任"},
+    # —— 民法典 · 总则 / 合同通则 ——
     {"law_id": "L-C6", "law_name": "民法典", "article": "第6条",
      "content": "民事主体从事民事活动，应当遵循公平原则，合理确定各方的权利和义务。",
      "category": "基本原则"},
+    {"law_id": "L-C7", "law_name": "民法典", "article": "第7条",
+     "content": "民事主体从事民事活动，应当遵循诚信原则，秉持诚实，恪守承诺。",
+     "category": "基本原则"},
+    {"law_id": "L-C143", "law_name": "民法典", "article": "第143条",
+     "content": "具备下列条件的民事法律行为有效：（一）行为人具有相应的民事行为能力；（二）意思表示真实；（三）不违反法律、行政法规的强制性规定，不违背公序良俗。",
+     "category": "合同效力"},
+    {"law_id": "L-C153", "law_name": "民法典", "article": "第153条",
+     "content": "违反法律、行政法规的强制性规定的民事法律行为无效，但是该强制性规定不导致该民事法律行为无效的除外。违背公序良俗的民事法律行为无效。",
+     "category": "合同效力"},
+    {"law_id": "L-C464", "law_name": "民法典", "article": "第464条",
+     "content": "合同是民事主体之间设立、变更、终止民事法律关系的协议。婚姻、收养、监护等有关身份关系的协议，适用有关该身份关系的法律规定。",
+     "category": "合同订立"},
+    {"law_id": "L-C470", "law_name": "民法典", "article": "第470条",
+     "content": "合同的内容由当事人约定，一般包括下列条款：（一）当事人的姓名或者名称和住所；（二）标的；（三）数量；（四）质量；（五）价款或者报酬；（六）履行期限、地点和方式；（七）违约责任；（八）解决争议的方法。",
+     "category": "合同订立"},
+    {"law_id": "L-C490", "law_name": "民法典", "article": "第490条",
+     "content": "当事人采用合同书形式订立合同的，自当事人均签名、盖章或者按指印时合同成立。在签名、盖章或者按指印之前，当事人一方已经履行主要义务，对方接受时，该合同成立。",
+     "category": "合同订立"},
     {"law_id": "L-C497", "law_name": "民法典", "article": "第497条",
      "content": "有下列情形之一的，该格式条款无效：（一）具有本法第一编第六章第三节和本法第五百零六条规定的无效情形；（二）提供格式条款一方不合理地免除或者减轻其责任、加重对方责任、限制对方主要权利；（三）提供格式条款一方排除对方主要权利。",
      "category": "格式条款"},
+    {"law_id": "L-C509", "law_name": "民法典", "article": "第509条",
+     "content": "当事人应当按照约定全面履行自己的义务。当事人应当遵循诚信原则，根据合同的性质、目的和交易习惯履行通知、协助、保密等义务。",
+     "category": "合同履行"},
+    {"law_id": "L-C563", "law_name": "民法典", "article": "第563条",
+     "content": "有下列情形之一的，当事人可以解除合同：（一）因不可抗力致使不能实现合同目的；（二）在履行期限届满前，当事人一方明确表示或者以自己的行为表明不履行主要债务；（三）当事人一方迟延履行主要债务，经催告后在合理期限内仍未履行；（四）当事人一方迟延履行债务或者有其他违约行为致使不能实现合同目的。",
+     "category": "合同解除"},
+    {"law_id": "L-C577", "law_name": "民法典", "article": "第577条",
+     "content": "当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
+     "category": "违约责任"},
+    {"law_id": "L-C584", "law_name": "民法典", "article": "第584条",
+     "content": "当事人一方不履行合同义务或者履行合同义务不符合约定，造成对方损失的，损失赔偿额应当相当于因违约所造成的损失，包括合同履行后可以获得的利益；但是，不得超过违约一方订立合同时预见到或者应当预见到的因违约可能造成的损失。",
+     "category": "违约责任"},
+    {"law_id": "L-C585", "law_name": "民法典", "article": "第585条",
+     "content": "当事人可以约定一方违约时应当根据违约情况向对方支付一定数额的违约金，也可以约定因违约产生的损失赔偿额的计算方法。约定的违约金过分高于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以适当减少。",
+     "category": "违约责任"},
+    {"law_id": "L-C590", "law_name": "民法典", "article": "第590条",
+     "content": "当事人一方因不可抗力不能履行合同的，根据不可抗力的影响，部分或者全部免除责任，但是法律另有规定的除外。因不可抗力不能履行合同的，应当及时通知对方，以减轻可能给对方造成的损失，并应当在合理期限内提供证明。",
+     "category": "违约免责"},
     {"law_id": "L-C626", "law_name": "民法典", "article": "第626条",
      "content": "买受人收到标的物时应当在约定的检验期间内检验。没有约定检验期间的，应当及时检验。",
      "category": "验收检验"},
     {"law_id": "L-C123", "law_name": "民法典", "article": "第123条",
-     "content": "民事主体依法享有知识产权。知识产权是权利人依法就下列客体享有的专有的权利：（一）作品；（二）发明、实用新型、外观设计；（三）商标；（四）地理标志；（五）商业秘密……",
+     "content": "民事主体依法享有知识产权。知识产权是权利人依法就下列客体享有的专有的权利：（一）作品；（二）发明、实用新型、外观设计；（三）商标；（四）地理标志；（五）商业秘密；（六）集成电路布图设计；（七）植物新品种；（八）法律规定的其他客体。",
      "category": "知识产权"},
+    {"law_id": "L-C807", "law_name": "民法典", "article": "第807条",
+     "content": "发包人未按照约定支付价款的，承包人可以催告发包人在合理期限内支付价款。发包人逾期不支付的，除根据建设工程的性质不宜折价、拍卖外，承包人可以与发包人协议将该工程折价，也可以请求人民法院将该工程依法拍卖。建设工程的价款就该工程折价或者拍卖的价款优先受偿。",
+     "category": "建设工程"},
+    # —— 争议解决 ——
     {"law_id": "L-P35", "law_name": "民事诉讼法", "article": "第35条",
      "content": "合同或者其他财产权益纠纷的当事人可以书面协议选择被告住所地、合同履行地、合同签订地、原告住所地、标的物所在地等与争议有实际联系的地点的人民法院管辖。",
      "category": "争议管辖"},
+    # —— 竞争与秘密 ——
     {"law_id": "L-A9", "law_name": "反不正当竞争法", "article": "第9条",
-     "content": "经营者不得实施下列侵犯商业秘密的行为：（一）以盗窃、贿赂、欺诈、胁迫、电子侵入或者其他不正当手段获取权利人的商业秘密……",
+     "content": "经营者不得实施下列侵犯商业秘密的行为：（一）以盗窃、贿赂、欺诈、胁迫、电子侵入或者其他不正当手段获取权利人的商业秘密；（二）披露、使用或者允许他人使用以前项手段获取的权利人的商业秘密；（三）违反保密义务或者违反权利人有关保守商业秘密的要求，披露、使用或者允许他人使用其所掌握的商业秘密。",
      "category": "商业秘密"},
+    # —— 劳动用工 ——
+    {"law_id": "L-L19", "law_name": "劳动合同法", "article": "第19条",
+     "content": "劳动合同期限三个月以上不满一年的，试用期不得超过一个月；劳动合同期限一年以上不满三年的，试用期不得超过二个月；三年以上固定期限和无固定期限的劳动合同，试用期不得超过六个月。同一用人单位与同一劳动者只能约定一次试用期。",
+     "category": "劳动用工"},
+    {"law_id": "L-L47", "law_name": "劳动合同法", "article": "第47条",
+     "content": "经济补偿按劳动者在本单位工作的年限，每满一年支付一个月工资的标准向劳动者支付。六个月以上不满一年的，按一年计算；不满六个月的，向劳动者支付半个月工资的经济补偿。",
+     "category": "劳动用工"},
+    {"law_id": "L-L82", "law_name": "劳动合同法", "article": "第82条",
+     "content": "用人单位自用工之日起超过一个月不满一年未与劳动者订立书面劳动合同的，应当向劳动者每月支付二倍的工资。用人单位违反本法规定不与劳动者订立无固定期限劳动合同的，自应当订立无固定期限劳动合同之日起向劳动者每月支付二倍的工资。",
+     "category": "劳动用工"},
+    # —— 招投标 ——
+    {"law_id": "L-B43", "law_name": "招标投标法", "article": "第43条",
+     "content": "在确定中标人前，招标人不得与投标人就投标价格、投标方案等实质性内容进行谈判。",
+     "category": "招标投标"},
+    {"law_id": "L-B46", "law_name": "招标投标法", "article": "第46条",
+     "content": "招标人和中标人应当自中标通知书发出之日起三十日内，按照招标文件和中标人的投标文件订立书面合同。招标人和中标人不得再行订立背离合同实质性内容的其他协议。",
+     "category": "招标投标"},
+    # —— 数据合规 ——
+    {"law_id": "L-D27", "law_name": "数据安全法", "article": "第27条",
+     "content": "开展数据处理活动应当依照法律、法规的规定，建立健全全流程数据安全管理制度，组织开展数据安全教育培训，采取相应的技术措施和其他必要措施，保障数据安全。",
+     "category": "数据合规"},
+    {"law_id": "L-PIPL13", "law_name": "个人信息保护法", "article": "第13条",
+     "content": "符合下列情形之一的，个人信息处理者方可处理个人信息：（一）取得个人的同意；（二）为订立、履行个人作为一方当事人的合同所必需，或者按照依法制定的劳动规章制度和依法签订的集体合同实施人力资源管理所必需；（三）为履行法定职责或者法定义务所必需……",
+     "category": "数据合规"},
+    # —— 担保 / 付款 ——
+    {"law_id": "L-C681", "law_name": "民法典", "article": "第681条",
+     "content": "保证合同是为保障债权的实现，保证人和债权人约定，当债务人不履行到期债务或者发生当事人约定的情形时，保证人履行债务或者承担责任的合同。",
+     "category": "担保保证"},
+    {"law_id": "L-C686", "law_name": "民法典", "article": "第686条",
+     "content": "保证的方式包括一般保证和连带责任保证。当事人在保证合同中对保证方式没有约定或者约定不明确的，按照一般保证承担保证责任。",
+     "category": "担保保证"},
 ]
 
 
@@ -1459,12 +1632,18 @@ def get_mail_status(request: Request):
 
 @app.post("/api/mail/config")
 def set_mail_config(request: Request, req: dict):
-    """更新邮件配置；persist=true 时同时写入项目根 .env。"""
+    """更新邮件配置。
+
+    敏感项（发件邮箱 / SMTP 授权码 / 收件邮箱）默认**加密落盘**
+    （data/mail_secret.json），并清掉 .env 里的明文同名键；
+    非敏感项（服务器 / 端口）按 persist 决定是否写回 .env。
+    """
     require_perm(request, "manage_rules")
     st = mailer.set_config(host_=req.get("host"), port_=req.get("port"),
                            user_=req.get("user"), password_=req.get("password"),
                            to_=req.get("to"), enabled_=req.get("enabled"),
-                           persist=bool(req.get("persist")))
+                           persist=bool(req.get("persist")),
+                           encrypt=bool(req.get("encrypt", True)))
     return JSONResponse(content=st)
 
 
@@ -1534,6 +1713,10 @@ def assistant_chat(request: Request, req: dict):
 
 # ---------------- 静态资源 ----------------
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# 首次启动预置演示任务（后台线程跑真实审查链路，不阻塞启动）。
+# 放在这里而不是文件顶部：_process 已定义，且已过 seed_samples 注册样例。
+seed_demo_tasks(_process)
 
 
 if __name__ == "__main__":

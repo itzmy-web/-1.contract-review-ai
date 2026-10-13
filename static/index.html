@@ -955,6 +955,16 @@
         <input id="lg-key" type="password" placeholder="请输入访问码" autocomplete="off">
       </div>
       <div id="lg-pane-account">
+      <div class="lg-field" id="lg-role-field">
+        <label>登录身份 <span style="color:#2563eb;font-weight:500">（演示模式 · 选定即以该角色进入）</span></label>
+        <select id="lg-role"></select>
+      </div>
+      <button class="lg-btn role-enter" type="button" id="lg-role-btn" onclick="doRoleLogin()">以该身份进入系统</button>
+      <div id="lg-or-line" style="display:flex;align-items:center;gap:10px;margin:16px 0 14px;color:#9aa2af;font-size:12px">
+        <span style="flex:1;height:1px;background:var(--line,#e6e8ec)"></span>
+        <span>或使用账号密码登录</span>
+        <span style="flex:1;height:1px;background:var(--line,#e6e8ec)"></span>
+      </div>
       <div class="lg-field">
         <label>用户名</label>
         <input id="lg-user" placeholder="请输入用户名" autocomplete="username" spellcheck="false">
@@ -963,8 +973,8 @@
         <label>密码</label>
         <input id="lg-pass" type="password" placeholder="请输入密码" autocomplete="current-password">
       </div>
-      <button class="lg-btn" type="submit">登 录</button>
-      <p class="lg-tip">登录后由服务端签发访问令牌（JWT），角色与权限由服务端校验</p>
+      <button class="lg-btn acct-btn" type="submit">账号登 录</button>
+      <p class="lg-tip">演示身份：角色决定可用的操作按钮，服务端按角色矩阵校验；<br>账号登录：服务端签发访问令牌（JWT），注册用户为只读角色</p>
       <div class="lg-reg-toggle" onclick="toggleReg()">没有账号？<b>注册新账号</b></div>
       <div class="lg-reg" id="lg-reg">
         <div class="lg-reg-hd">注册新账号</div>
@@ -1202,6 +1212,7 @@
       </div>
     </div>
     <div class="stats" id="hist-stats"></div>
+    <div id="hist-filters" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px"></div>
     <div id="hist-table"></div>
   </section>
 
@@ -1259,11 +1270,12 @@
         <h3 class="sec-title">合同分类审查清单（必备条款）</h3>
         <div id="checklist"></div>
         <h3 class="sec-title mt">法律条文库</h3>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
           <input id="law-search" placeholder="搜索法律 / 条款 / 条文内容…" oninput="renderLaws()"
                  style="flex:1;height:36px;padding:0 12px;min-width:0">
           <button class="ghost" data-perm="manage_rules" onclick="addLaw()">+ 上传 / 补充法律</button>
         </div>
+        <div id="law-cats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
         <div id="law-list"></div>
         <h3 class="sec-title mt">标准示范条款库</h3>
         <div id="tmpl-list"></div>
@@ -1380,9 +1392,9 @@
           <input id="mc-user" placeholder="如：123456@qq.com（仅示例）" autocomplete="off" spellcheck="false"></label>
         <label class="cf"><span>SMTP 授权码</span>
           <input id="mc-pass" type="password" placeholder="16 位授权码（不是 QQ 登录密码）" autocomplete="off"></label>
-        <label class="cf"><span>收件邮箱 <b class="cf-lock"><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.6" width="12" height="8" rx="1.8"/><path d="M6.9 8.6V6.4a3.1 3.1 0 0 1 6.2 0v2.2"/></svg>已固定</b></span>
+        <label class="cf"><span>收件邮箱 <b class="cf-lock"><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.6" width="12" height="8" rx="1.8"/><path d="M6.9 8.6V6.4a3.1 3.1 0 0 1 6.2 0v2.2"/></svg>已固定 · 已加密</b></span>
           <input id="mc-to" placeholder="留空则发给发件邮箱自己" autocomplete="off" spellcheck="false"
-                 disabled title="收件邮箱已加密显示。如需修改，请编辑项目根目录 .env 里的 MAIL_TO 后重启服务"></label>
+                 disabled title="收件邮箱以密文存储，页面只回显掩码。如需修改，请由管理员在本页「保存配置」时填写新地址"></label>
         <label class="cf"><span>SMTP 服务器</span>
           <input id="mc-host" placeholder="smtp.qq.com" autocomplete="off" spellcheck="false"></label>
         <label class="cf"><span>端口（SSL）</span>
@@ -1395,7 +1407,9 @@
       </div>
       <p class="hint" style="margin-top:13px;line-height:1.95">
         授权码获取路径：QQ邮箱 → <b>设置 → 账户</b> → 开启「IMAP/SMTP 服务」→ 生成授权码。<br>
-        <b>注意</b>：必须使用授权码，不能用 QQ 登录密码。未配置时系统不发信，但审查流程完全不受影响。
+        <b>注意</b>：必须使用授权码，不能用 QQ 登录密码。未配置时系统不发信，但审查流程完全不受影响。<br>
+        <b>安全</b>：发件邮箱、SMTP 授权码、收件邮箱均<b>加密存储</b>（scrypt 派生 + HMAC-SHA256 认证加密，
+        密文落盘 data/mail_secret.json，主密钥单独存放且已被 git 忽略）；页面与接口只回显掩码，明文不下发浏览器。
       </p>
     </div>
 
@@ -1647,19 +1661,38 @@ async function doLogin(e){
   enterAfterLogin();
   toast('登录成功：' + (d.name || u), 'ok');
 }
+/* 演示身份登录：选定「登录身份」直接进入（对应后端 /api/login-role）。
+   与账号通道并列——账号通道签发 JWT，演示通道用 X-Role 头表达身份，
+   不依赖 JWT 签名密钥，避免部署环境密钥轮换时全站 401。 */
+async function doRoleLogin(){
+  if (!(await gateKey())) return;
+  const sel = document.getElementById('lg-role');
+  const role = sel ? sel.value : '';
+  if (!role) { toast('请先选择登录身份', 'warn'); return; }
+  const resp = await api('/api/login-role', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({role})});
+  let d = {}; try { d = await resp.json(); } catch(e) {}
+  if (!resp.ok) { toast('进入失败：' + (d.detail || ('HTTP ' + resp.status)), 'err'); return; }
+  ROLE = d.role || role;
+  try {
+    localStorage.removeItem('cr_token');   /* 演示通道不持有令牌 */
+    localStorage.setItem('cr_role', ROLE);
+    localStorage.setItem('cr_username', ROLE);
+    localStorage.setItem('cr_user_name',
+      ((d.name || '') + (d.person ? ' ' + d.person : '')).trim());
+  } catch(e) {}
+  enterAfterLogin();
+  const label = ROLES[ROLE] ? (ROLES[ROLE].name + (ROLES[ROLE].person ? ' ' + ROLES[ROLE].person : '')) : (d.name || role);
+  toast('已以「' + label + '」身份进入系统', 'ok');
+}
 function enterAfterLogin(){
   try { localStorage.setItem('cr_role', ROLE); } catch(err) {}
-  const top = document.getElementById('role-sel');
-  if (top) {
-    top.value = ROLES[ROLE] ? ROLE : '';
-    const r = ROLES[ROLE];
-    top.title = '当前用户：' + (r ? `${r.name} ${r.person}`.trim() : '演示模式（全部权限）');
-  }
+  renderRoleSel();
   applyPerms();
   syncSideUser();
   document.documentElement.classList.add('logged');
   applyHash();
-  loadAfterLogin();   /* 登录成功：立刻拉取该角色的业务数据（接口需令牌，故不走启动分支） */
+  loadAfterLogin();   /* 登录成功：立刻拉取该角色的业务数据 */
   loadHistBadge();    /* 登录即刷新该账号的历史任务数 */
   checkResumable();  /* 登录即检查是否有未传完的文件（可断点续传） */
 }
@@ -1816,16 +1849,39 @@ function currentUser(){
   let u = ''; try { u = localStorage.getItem('cr_username') || ''; } catch(e) {}
   return u || ROLE || '';
 }
-function api(path, opts={}){
+/* 会话失效统一处理：令牌过期 / 密钥轮换导致接口 401 时，
+   绝不让页面「静默变空」（用户看到的是空白页面却不知道发生了什么）。
+   这里清令牌 + 提示 + 回登录页，一处兜住全站。 */
+let _sessionExpiredAt = 0;
+function handleSessionExpired(){
+  const now = Date.now();
+  if (now - _sessionExpiredAt < 2000) return;   /* 并发请求只提示一次 */
+  _sessionExpiredAt = now;
+  try { localStorage.removeItem('cr_token'); } catch(e) {}
+  if (document.documentElement.classList.contains('logged')) {
+    document.documentElement.classList.remove('logged');
+    toast('登录已失效，请重新选择登录身份或使用账号登录', 'warn', 5200);
+  }
+  const lg = document.getElementById('lg-user');
+  if (lg) { try { lg.focus(); } catch(e) {} }
+}
+/* 无需会话的接口：它们返回 401 是"还没登录 / 需要访问码"，属正常语义 */
+const _PUBLIC_API = ['/api/roles', '/api/login', '/api/register', '/api/login-role', '/api/auth/mode'];
+async function api(path, opts={}){
   opts = Object.assign({}, opts);
   opts.headers = Object.assign({}, opts.headers || {});
   const t = (() => { try { return localStorage.getItem('cr_token') || ''; } catch(e) { return ''; } })();
   if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  /* 演示身份通道：登录页选定「登录身份」后，每个请求都带上 X-Role，
+     由服务端按角色矩阵校验（不依赖 JWT 签名密钥的稳定性）。 */
+  if (ROLE) opts.headers['X-Role'] = ROLE;
   const u = currentUser();
   if (u) opts.headers['X-User'] = u;
   const k = (() => { try { return localStorage.getItem('cr_key') || ''; } catch(e) { return ''; } })();
   if (k) opts.headers['X-API-Key'] = k;
-  return fetch(path, opts);
+  const r = await fetch(path, opts);
+  if (r.status === 401 && !_PUBLIC_API.some(p => path.startsWith(p))) handleSessionExpired();
+  return r;
 }
 /* 受保护接口的统一读取：未登录 / 令牌失效（401）或网络异常时返回 fallback，
    由调用方静默跳过，避免登录前渲染阶段抛异常中断后续初始化。
@@ -1876,16 +1932,46 @@ async function loadRoles(){
   const resp = await api('/api/roles');
   if (resp.status === 401) { syncSideUser(); return; }   /* 需要访问码：保持未登录态 */
   ROLES = await resp.json();
-  const sel = document.getElementById('role-sel');
-  const label = () => ROLES[ROLE] ? `${ROLES[ROLE].name} ${ROLES[ROLE].person}` : '未登录（只读）';
-  const cur = ROLES[ROLE];
-  sel.innerHTML = `<option>${cur ? `${cur.name} ${cur.person}`.trim() : '未登录（只读）'}</option>`;
-  sel.value = sel.options[0].value;
-  sel.disabled = true;   /* A1：角色由服务端签发，前端不可切换 */
-  const sync = () => { sel.title = '当前用户：' + label() + '（角色由服务端签发，不可切换）'; };
-  sync();
+  /* 登录页「登录身份」下拉：与后端角色表同源，不硬编码，新增角色自动出现 */
+  const lg = document.getElementById('lg-role');
+  if (lg) {
+    const keep = lg.value || ROLE || 'admin';
+    lg.innerHTML = Object.entries(ROLES).map(([k, v]) =>
+      `<option value="${k}">${v.name}${v.person ? ' ' + v.person : ''}</option>`).join('');
+    lg.value = ROLES[keep] ? keep : Object.keys(ROLES)[0];
+  }
+  renderRoleSel();
   applyPerms();
   syncSideUser();
+}
+/* 右上角「当前用户」下拉：可在全部角色间切换（切换即按新角色重载业务数据）。
+   身份校验仍在服务端：每个请求带 X-Role，服务端按角色矩阵放行或 403。 */
+function renderRoleSel(){
+  const sel = document.getElementById('role-sel');
+  if (!sel) return;
+  let html = '<option value="">未选择身份（只读浏览）</option>';
+  for (const [k, v] of Object.entries(ROLES)) {
+    html += `<option value="${k}">${v.name}${v.person ? ' ' + v.person : ''}</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = ROLES[ROLE] ? ROLE : '';
+  sel.disabled = false;
+  sel.title = ROLES[ROLE]
+    ? `当前身份：${ROLES[ROLE].name} ${ROLES[ROLE].person}（可切换）`
+    : '未选择身份：仅可查看';
+  sel.onchange = () => {
+    ROLE = sel.value;
+    try {
+      localStorage.setItem('cr_role', ROLE);
+      if (ROLE) localStorage.setItem('cr_username', ROLE);
+      else localStorage.removeItem('cr_username');
+    } catch(e) {}
+    applyPerms();
+    syncSideUser();
+    if (document.documentElement.classList.contains('logged')) loadAfterLogin();
+    const r = ROLES[ROLE];
+    toast(ROLE ? ('已切换为「' + r.name + (r.person ? ' ' + r.person : '') + '」') : '已切换为只读浏览', 'ok');
+  };
 }
 
 const VIEW_TITLE = { dashboard:'审查大盘', workbench:'智能审查工作台', history:'我的历史记录',
@@ -2432,26 +2518,30 @@ async function loadFailures(){
       <div><div class="k">${c.label}</div><div class="v">${c.value}</div><div class="d">${c.desc}</div></div>
     </div>`).join('');
 
-  /* 授权码：已设置 → 锁定不可改（改 .env 的 SMTP_PASS）；未设置 → 允许填写 */
+  /* 授权码：已设置 → 锁定并以掩码回显；未设置 → 允许填写 */
   const pwEl = document.getElementById('mc-pass');
   if (pwEl) {
     if (st.has_pass) {
-      pwEl.disabled = true; pwEl.value = '••••••••••••••••';
-      pwEl.title = '授权码已设置并锁定。如需更换，请编辑项目根目录 .env 里的 SMTP_PASS 后重启服务';
+      pwEl.disabled = true; pwEl.value = st.pass_masked || '••••••••••••••••';
+      pwEl.title = '授权码已加密存储（密文落盘 data/mail_secret.json），页面只回显掩码';
     } else {
       pwEl.disabled = false; pwEl.value = '';
-      pwEl.title = '粘贴 QQ 邮箱生成的 16 位授权码（不是登录密码）';
+      pwEl.title = '粘贴 QQ 邮箱生成的 16 位授权码（不是登录密码）；保存时会自动加密';
     }
   }
   if (!_mailCfgFilled) {
-    const put = (id, v) => { const el = document.getElementById(id); if (el && !el.value && v) el.value = v; };
-    /* 发件邮箱不回显真实值（避免泄露），输入框仅用示例 placeholder 提示格式；留空保存 = 不改动现有配置 */
-    put('mc-to', maskEmail(d.config.to));
+    const put = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    const ph  = (id, v) => { const el = document.getElementById(id); if (el && v) el.placeholder = v; };
+    /* 敏感项回显：一律用掩码，明文永不回到浏览器 */
+    put('mc-to', st.to_masked || maskEmail(d.config.to));
+    ph('mc-user', st.user_masked ? ('已配置：' + st.user_masked) : '如：123456@qq.com（仅示例）');
     put('mc-host', st.host); put('mc-port', st.port);
     _mailCfgFilled = true;
   }
   const ms = document.getElementById('mc-state');
-  if (ms) ms.textContent = d.configured ? '已配置 · 解析失败将自动发信' : '未配置 · 不影响审查流程';
+  if (ms) ms.textContent = d.configured
+    ? ('已配置 · 解析失败将自动发信' + (st.encrypted ? ' · 敏感项已加密存储' : ''))
+    : '未配置 · 不影响审查流程';
 
   const fc = document.getElementById('fail-count');
   if (fc) fc.textContent = d.total ? `共 ${d.total} 条` : '';
@@ -2650,6 +2740,8 @@ function exportTabs(){ authDownload('/api/export/tasks', '合同台账.csv'); }
 function exportAuditCsv(){ authDownload('/api/audit/export', '审计日志.csv'); }
 
 /* ---------------- 我的历史记录（按账号留存，可跨会话 / 跨重启找回） ---------------- */
+let _histFilter = 'all';
+function setHistFilter(k){ _histFilter = k; loadHistory(); }
 async function loadHistory(){
   const box = document.getElementById('hist-table');
   if (!box) return;
@@ -2657,44 +2749,88 @@ async function loadHistory(){
   const sub = document.getElementById('hist-sub');
   if (sub) sub.textContent = u
     ? ('当前账号：' + u + '　·　同一账号每次登录都能找回之前做过的任务')
-    : '演示模式（未选定账号）：展示全部任务';
+    : '演示模式（未选定身份）：展示全部任务';
   const q = ((document.getElementById('hist-q') || {}).value || '').trim();
   let url = '/api/tasks?owner=' + encodeURIComponent(u);
   if (q) url += '&q=' + encodeURIComponent(q);
   let tasks = [];
   try { tasks = await (await api(url)).json(); } catch(e) { tasks = []; }
+  if (!Array.isArray(tasks)) tasks = [];
   const badge = document.getElementById('sb-n-hist');
   if (badge) badge.textContent = String(tasks.length);
-  const done = tasks.filter(t => t.status === 'completed').length;
-  const high = tasks.filter(t => t.risk_level === 'high').length;
-  const mod  = tasks.filter(t => t.modified).length;
+
+  const done    = tasks.filter(t => t.status === 'completed').length;
+  const pending = tasks.filter(t => t.status === 'pending').length;
+  const blocked = tasks.filter(t => t.status === 'blocked').length;
+  const high    = tasks.filter(t => t.risk_level === 'high').length;
+  const mod     = tasks.filter(t => t.modified).length;
+  const riskN   = tasks.reduce((s, t) => s + ((t.risks || []).length), 0);
   const cards = [
-    {ic:'ic-total', icon:ICON.total, label:'历史任务', value:tasks.length, desc:'本账号累计'},
-    {ic:'ic-run',   icon:ICON.run,   label:'审查完成', value:done,         desc:'可查看报告'},
-    {ic:'ic-block', icon:ICON.block, label:'高风险',   value:high,         desc:'需重点关注'},
-    {ic:'ic-high',  icon:ICON.high,  label:'已修改',   value:mod,          desc:'人工改动过'},
+    {ic:'ic-total', icon:ICON.total, label:'历史任务',   value:tasks.length, desc:'本账号累计'},
+    {ic:'ic-run',   icon:ICON.run,   label:'审查完成',   value:done,         desc:'可查看报告'},
+    {ic:'ic-block', icon:ICON.block, label:'待审 / 阻塞', value:pending + ' / ' + blocked, desc:'未完成与解析失败'},
+    {ic:'ic-high',  icon:ICON.high,  label:'高风险 / 问题', value:high + ' / ' + riskN, desc:'需重点关注'},
   ];
   const st = document.getElementById('hist-stats');
   if (st) st.innerHTML = cards.map(c => `
     <div class="stat"><div class="ic ${c.ic}">${c.icon}</div>
       <div><div class="k">${c.label}</div><div class="v">${c.value}</div><div class="d">${c.desc}</div></div>
     </div>`).join('');
-  const rows = tasks.map(t => `<tr onclick="openTask('${t.task_id}')">
-    <td class="name">${esc(t.contract_name)}${t.modified?'<span class="tag-mod">已修改</span>':''}</td>
+
+  /* 状态筛选条：一眼看出各状态的分布，点一下只看该类 */
+  const FILTERS = [
+    {k:'all',       t:'全部',    n: tasks.length},
+    {k:'completed', t:'已完成',  n: done},
+    {k:'pending',   t:'待审查',  n: pending},
+    {k:'blocked',   t:'已阻塞',  n: blocked},
+    {k:'modified',  t:'已修改',  n: mod},
+    {k:'high',      t:'高风险',  n: high},
+  ];
+  const fb = document.getElementById('hist-filters');
+  if (fb) fb.innerHTML = FILTERS.map(f => {
+    const on = _histFilter === f.k;
+    return `<button class="ghost" onclick="setHistFilter('${f.k}')"
+      style="height:32px;padding:0 13px;border-radius:999px;${on
+        ? 'background:var(--brand,#2563eb);color:#fff;border-color:transparent;' : ''}"
+      ${on ? 'aria-pressed="true"' : ''}>${f.t} <b style="font-weight:600">${f.n}</b></button>`;
+  }).join('');
+
+  const shown = tasks.filter(t => {
+    if (_histFilter === 'all') return true;
+    if (_histFilter === 'modified') return !!t.modified;
+    if (_histFilter === 'high') return t.risk_level === 'high';
+    return t.status === _histFilter;
+  });
+
+  const rows = shown.map(t => {
+    const cp = (t.meta && t.meta.counterparty) || '';
+    const nr = (t.risks || []).length;
+    return `<tr onclick="openTask('${t.task_id}')">
+    <td class="name">${esc(t.contract_name)}${t.modified?'<span class="tag-mod">已修改</span>':''}
+      <div class="hint" style="font-size:11.5px">${esc(t.task_id)}</div></td>
+    <td>${cp ? esc(cp) : '<span class="hint">—</span>'}</td>
     <td>${BIZ[t.biz_type] || t.biz_type}</td>
-    <td>${t.amount != null ? t.amount.toLocaleString('zh-CN')+' '+(t.currency||'') : '—'}</td>
+    <td>${t.amount != null ? (Number(t.amount)).toLocaleString('zh-CN') + ' ' + (t.currency || '') : '—'}</td>
     <td>${statusPill(t.status)}</td>
     <td>${riskPill(t.risk_level)}</td>
+    <td>${nr ? ('<b>' + nr + '</b>') : '<span class="hint">0</span>'}</td>
     <td class="hint">${esc(t.modified_by || '—')}</td>
-    <td class="hint">${esc(fmtTime(t.created_at))}</td>
-    <td class="hint">${esc(fmtTime(t.updated_at || t.created_at))}</td></tr>`).join('');
-  const empty = `<tr><td colspan="8"><div class="empty"><div class="ico">${ICON.empty}</div>
-    <div class="t">该账号暂无历史任务</div>
-    <div class="d">在「审查大盘」上传合同后，任务会自动归入当前账号，下次登录仍可在此找回</div></div></td></tr>`;
+    <td class="hint">${esc(fmtTime(t.updated_at || t.created_at))}</td></tr>`;
+  }).join('');
+
+  const empty = tasks.length
+    ? `<tr><td colspan="9"><div class="empty"><div class="ico">${ICON.total}</div>
+        <div class="t">当前筛选下没有任务</div>
+        <div class="d">换一个状态筛选，或点「全部」查看本账号的全部历史任务</div></div></td></tr>`
+    : `<tr><td colspan="9"><div class="empty"><div class="ico">${ICON.empty}</div>
+        <div class="t">该账号暂无历史任务</div>
+        <div class="d">在「审查大盘」上传合同后，任务会自动归入当前账号，下次登录仍可在此找回</div></div></td></tr>`;
+
   box.innerHTML = `<div class="tbl-card"><table>
-    <thead><tr><th>合同名称</th><th>类型</th><th>合同金额</th><th>审查状态</th><th>综合风险</th>
-      <th>修改人</th><th>创建时间</th><th>最近更新</th></tr></thead>
-    <tbody>${rows || empty}</tbody></table></div>`;
+    <thead><tr><th>合同名称 / 编号</th><th>相对方</th><th>类型</th><th>合同金额</th>
+      <th>审查状态</th><th>综合风险</th><th>问题数</th><th>修改人</th><th>最近更新</th></tr></thead>
+    <tbody>${rows || empty}</tbody></table></div>
+    ${shown.length ? `<p class="hint" style="margin-top:10px">共 ${shown.length} 条${_histFilter==='all' ? '' : '（已按状态筛选）'} · 点击任意一行可打开工作台查看详情</p>` : ''}`;
 }
 /* 侧栏「我的历史记录」计数徽标（登录后即刷新，无需进入页面） */
 async function loadHistBadge(){
@@ -3435,17 +3571,54 @@ function renderRules(){
 }
 
 let _laws = [];
+let _lawCat = '';
+function setLawCat(c){ _lawCat = (_lawCat === c ? '' : c); renderLaws(); }
 async function loadLaws(){
   _laws = await (await api('/api/laws')).json();
+  if (!Array.isArray(_laws)) _laws = [];
   renderLaws();
 }
 function renderLaws(){
   const q = ((document.getElementById('law-search')||{}).value || '').trim().toLowerCase();
-  const items = _laws.filter(l => !q || [l.law_name, l.article, l.content, l.category].join(' ').toLowerCase().includes(q));
-  document.getElementById('law-list').innerHTML = items.map(l => `<div class="rule-item">
-    <div class="rt"><span class="txt">${esc(l.law_name)} ${esc(l.article)}</span>
-      <span class="badge">${esc(l.category)}</span></div>
-    <div class="ln">${esc(l.content)}</div></div>`).join('') || '<p class="hint">没有匹配的法律条文</p>';
+  const cats = [...new Set(_laws.map(l => l.category).filter(Boolean))];
+  const catBox = document.getElementById('law-cats');
+  if (catBox) catBox.innerHTML = _laws.length ? [
+    `<button class="ghost" onclick="setLawCat('')" style="height:28px;padding:0 11px;border-radius:999px;font-size:12px;${!_lawCat
+      ? 'background:var(--brand,#2563eb);color:#fff;border-color:transparent;' : ''}">全部 ${_laws.length}</button>`,
+    ...cats.map(c => {
+      const n = _laws.filter(l => l.category === c).length;
+      const on = _lawCat === c;
+      return `<button class="ghost" onclick="setLawCat('${esc(c)}')" style="height:28px;padding:0 11px;border-radius:999px;font-size:12px;${on
+        ? 'background:var(--brand,#2563eb);color:#fff;border-color:transparent;' : ''}">${esc(c)} ${n}</button>`;
+    }),
+  ].join('') : '';
+
+  const items = _laws.filter(l =>
+    (!_lawCat || l.category === _lawCat) &&
+    (!q || [l.law_name, l.article, l.content, l.category].join(' ').toLowerCase().includes(q)));
+
+  const box = document.getElementById('law-list');
+  if (!box) return;
+  if (!items.length) {
+    box.innerHTML = `<p class="hint">${_laws.length ? '当前条件下没有匹配的法律条文，换个分类或关键词试试' : '法律条文库为空，点上方「+ 上传 / 补充法律」添加'}</p>`;
+    applyPerms();
+    return;
+  }
+  /* 按「法律名称」分组展示：同一部法律的条款聚在一起，比一条条平铺更好查 */
+  const byLaw = {};
+  items.forEach(l => { (byLaw[l.law_name] = byLaw[l.law_name] || []).push(l); });
+  box.innerHTML = Object.entries(byLaw).map(([name, list]) => `
+    <div class="law-group" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <b style="font-size:13.5px;color:var(--text)">${esc(name)}</b>
+        <span class="badge" style="font-size:11px">${list.length} 条</span>
+      </div>
+      ${list.map(l => `<div class="rule-item">
+        <div class="rt"><span class="txt">${esc(l.article)}</span>
+          <span class="badge">${esc(l.category || '')}</span></div>
+        <div class="ln">${esc(l.content)}</div></div>`).join('')}
+    </div>`).join('');
+  applyPerms();
 }
 async function addLaw(){
   const law_name = prompt('法律名称（如：民法典）'); if (law_name === null) return;
@@ -3622,6 +3795,23 @@ async function loadAfterLogin(){
 }
 (async () => {
   initOrbit();
+  /* 演示深链：?nologin=1&role=audit_lead 可直接以指定身份打开某个页面，
+     便于演示时快速轮换角色、或把链接直接发给评审人（仅在演示身份登录开启时有效）。 */
+  try {
+    const _qp = new URLSearchParams(location.search);
+    const _rp = (_qp.get('role') || '').trim();
+    if (_rp) {
+      ROLE = _rp;
+      localStorage.setItem('cr_role', _rp);
+      localStorage.setItem('cr_username', _rp);
+    }
+  } catch(e) {}
+  /* 未登录状态不保留上次的身份：否则请求会带着上一轮角色的 X-Role 发出去，
+     在登录页背后产生"看起来已登录"的错觉。登录后才恢复。 */
+  if (!document.documentElement.classList.contains('logged')) {
+    ROLE = '';
+    try { localStorage.removeItem('cr_role'); } catch(e) {}
+  }
   try { const _ft = new URLSearchParams(location.search).get('ftype');
         if (_ft) { const _b = document.querySelector(`#ftype-seg .ft[data-t="${_ft}"]`); if (_b) pickFType(_b); }
   } catch(e) {}
@@ -3629,6 +3819,15 @@ async function loadAfterLogin(){
   // 探测是否需要访问码（后端配置了 API_AUTH_KEY 时返回 401）
   try { const _r = await fetch('/api/roles'); if (_r.status === 401) _needKey = true; } catch(e) {}
   updateKeyField();
+  // 演示身份登录开关：关闭时隐藏登录页的「登录身份」区块，只留账号登录
+  try {
+    const _m = await (await fetch('/api/auth/mode')).json();
+    if (!_m.demo_role_login) {
+      ['lg-role-field', 'lg-role-btn', 'lg-or-line'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.style.display = 'none';
+      });
+    }
+  } catch(e) {}
   await loadRoles();
   applyHash();
   // 已登录（含 ?nologin=1 且带令牌）才加载业务数据

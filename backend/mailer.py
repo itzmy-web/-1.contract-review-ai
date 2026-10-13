@@ -16,7 +16,9 @@ PRD 2.4.7 异常任务阻塞保护与告警的延伸：合同上传/解析失败
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import smtplib
 import threading
@@ -25,10 +27,51 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from pathlib import Path
 
-from . import llm
+from . import llm, secretbox
 
 logger = logging.getLogger(__name__)
+
+# ---------------- 敏感配置的加密存储 ----------------
+# SMTP 授权码 / 发件邮箱 / 收件邮箱不做明文落盘：统一密文写入 data/mail_secret.json，
+# 明文只存在于进程内存（os.environ），服务重启后从密文解密还原。
+_BASE_DIR = Path(__file__).resolve().parent.parent
+_SECRET_FILE = Path(os.getenv("CR_DATA_DIR") or (_BASE_DIR / "data")) / "mail_secret.json"
+
+
+def _load_secrets() -> dict:
+    try:
+        if _SECRET_FILE.exists():
+            return json.loads(_SECRET_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logger.warning("邮件密文配置读取失败：%s", _SECRET_FILE)
+    return {}
+
+
+def _save_secrets(updates: dict) -> None:
+    """把明文加密后写盘（仅覆盖传入的键）。"""
+    data = _load_secrets()
+    for k, v in updates.items():
+        data[k] = secretbox.encrypt(v) if v else ""
+    try:
+        _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _SECRET_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            os.chmod(_SECRET_FILE, 0o600)
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("邮件密文配置写入失败：%s", _SECRET_FILE)
+
+
+def _secret(key: str) -> str:
+    """从加密存储取明文（解密失败按未配置处理）。"""
+    return secretbox.decrypt(_load_secrets().get(key, "")) or ""
+
+
+def secrets_storage_path() -> str:
+    return str(_SECRET_FILE)
 
 
 # ---------------- 配置读取 ----------------
@@ -49,15 +92,18 @@ def port() -> int:
 
 
 def user() -> str:
-    return (_cfg("SMTP_USER") or "").strip()
+    """发件邮箱：环境变量 / .env 优先，其次加密存储。"""
+    return (_cfg("SMTP_USER") or "").strip() or _secret("smtp_user")
 
 
 def password() -> str:
-    return (_cfg("SMTP_PASS") or "").strip()
+    """SMTP 授权码：环境变量 / .env 优先，其次加密存储（密文落盘）。"""
+    return (_cfg("SMTP_PASS") or "").strip() or _secret("smtp_pass")
 
 
 def mail_to() -> str:
-    return (_cfg("MAIL_TO") or "").strip() or user()
+    """收件邮箱：环境变量 / .env 优先，其次加密存储，最后回落到发件邮箱。"""
+    return (_cfg("MAIL_TO") or "").strip() or _secret("mail_to") or user()
 
 
 def enabled() -> bool:
@@ -68,16 +114,21 @@ def enabled() -> bool:
 
 
 def status() -> dict:
-    u, p = user(), password()
+    u, p, t = user(), password(), mail_to()
+    enc = _load_secrets()
     return {
         "enabled": enabled(),
         "host": host(),
         "port": port(),
         "user": u,
-        "user_masked": (u[:3] + "***" + u[u.find("@"):]) if "@" in u and len(u) > 6 else (u or ""),
+        "user_masked": secretbox.masked(u),
         "has_pass": bool(p),
-        "pass_masked": ("*" * 8) if p else "",
-        "to": mail_to(),
+        "pass_masked": ("*" * 16) if p else "",
+        "to": t,
+        "to_masked": secretbox.masked(t),
+        "to_locked": True,                 # 收件邮箱由服务端配置，前端只读
+        "encrypted": bool(enc),            # 敏感项是否已密文落盘
+        "secret_file": str(_SECRET_FILE),
         "env_file": str(llm.ENV_PATH),
         "env_file_exists": llm.ENV_PATH.exists(),
         "last_error": _LAST_ERROR,
@@ -87,30 +138,66 @@ def status() -> dict:
 
 def set_config(host_: str | None = None, port_: str | None = None, user_: str | None = None,
                password_: str | None = None, to_: str | None = None,
-               enabled_: bool | None = None, persist: bool = False) -> dict:
-    """更新配置（写进程环境变量；persist=True 同时写回 .env）。"""
+               enabled_: bool | None = None, persist: bool = False,
+               encrypt: bool = True) -> dict:
+    """更新配置。
+
+    分两类落盘：
+    - **非敏感**（SMTP_HOST / SMTP_PORT / MAIL_ENABLED）：写进程环境变量，
+      persist=True 时同时写回 .env；
+    - **敏感**（SMTP_USER / SMTP_PASS / MAIL_TO）：encrypt=True（默认）时
+      **密文写入 data/mail_secret.json**，并把 .env 里的明文同名键清掉，
+      杜绝"已经加密了、但明文还留在 .env"的假加密。
+    """
     llm._loaded = True  # 阻止后续被 .env 覆盖
     updates: dict[str, str | None] = {}
     if host_ is not None:
         updates["SMTP_HOST"] = host_.strip()
     if port_ is not None:
         updates["SMTP_PORT"] = str(port_).strip()
-    if user_ is not None:
-        updates["SMTP_USER"] = user_.strip()
-    if password_ is not None:
-        updates["SMTP_PASS"] = password_.strip()
-    if to_ is not None:
-        updates["MAIL_TO"] = to_.strip()
     if enabled_ is not None:
         updates["MAIL_ENABLED"] = "1" if enabled_ else "0"
-    import os
     for k, v in updates.items():
         if v == "":
             os.environ.pop(k, None)
         else:
             os.environ[k] = v
-    if persist:
+    if persist and updates:
         llm.save_env(updates)
+
+    sensitive: dict[str, str] = {}
+    if user_ is not None:
+        sensitive["smtp_user"] = user_.strip()
+    if password_ is not None:
+        sensitive["smtp_pass"] = password_.strip()
+    if to_ is not None:
+        sensitive["mail_to"] = to_.strip()
+    if sensitive:
+        if encrypt:
+            # 运行时明文只放内存，落盘走密文
+            for key, env_key in (("smtp_user", "SMTP_USER"), ("smtp_pass", "SMTP_PASS"),
+                                 ("mail_to", "MAIL_TO")):
+                if key in sensitive:
+                    if sensitive[key]:
+                        os.environ[env_key] = sensitive[key]
+                    else:
+                        os.environ.pop(env_key, None)
+            _save_secrets(sensitive)
+            # 清掉 .env 里的明文同名键
+            llm.save_env({"SMTP_USER": "", "SMTP_PASS": "", "MAIL_TO": ""})
+        else:
+            plain = {"SMTP_USER": sensitive.get("smtp_user"),
+                     "SMTP_PASS": sensitive.get("smtp_pass"),
+                     "MAIL_TO": sensitive.get("mail_to")}
+            for env_key, v in plain.items():
+                if v is None:
+                    continue
+                if v == "":
+                    os.environ.pop(env_key, None)
+                else:
+                    os.environ[env_key] = v
+            if persist:
+                llm.save_env(plain)
     return status()
 
 

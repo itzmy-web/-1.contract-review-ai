@@ -323,3 +323,44 @@ def seed_samples(samples_dir: str) -> dict:
                 import sys
                 print(f"[samples] 跳过图片样例 {key}.png：{e}", file=sys.stderr)
     return store.SAMPLES
+
+
+# 首次启动预置演示任务时挑选的样例（覆盖采购/销售/服务/劳动四类，含标准版与风险版）
+DEMO_TASK_SAMPLES = ["procurement_risk.docx", "sales_risk.docx",
+                     "service_risk.docx", "labor_std.docx"]
+
+
+def seed_demo_tasks(runner, limit: int = 4) -> None:
+    """首次启动时用**真实审查链路**跑几条样例合同，让「审查大盘 / 我的历史记录」开箱即有内容。
+
+    - 只在当前没有任何任务时执行一次；结果落盘 data/tasks.json，之后不再重复；
+    - 跑在后台线程，不阻塞服务启动；
+    - 任务 owner=''（未归属），对所有登录身份可见（见 store.tasks_of_owner 的说明）；
+    - 走的是和用户上传完全相同的 run_review 链路 —— 数据是真的，不是假造的分析结果。
+    """
+    import threading
+    import time
+    from . import store
+
+    def _run():
+        try:
+            time.sleep(1.5)          # 先让服务把启动流程走完，避免和首屏请求抢资源
+            if store.TASKS:          # 已有历史任务（含用户自己上传的）→ 不预置
+                return
+            picked = [(n, m) for n, m in store.SAMPLES.items()
+                      if n in DEMO_TASK_SAMPLES and os.path.exists(m["path"])]
+            for name, meta in picked[:limit]:
+                task = store.create_task(contract_name=meta["contract_name"],
+                                         biz_type=meta["biz_type"],
+                                         applicant=meta["applicant"], owner="")
+                task.source_path = meta["path"]
+                task.file_type = os.path.splitext(name)[1].lower()
+                try:
+                    runner(task.task_id, meta["path"])
+                except Exception as e:      # 单条失败不影响其余预置任务
+                    import sys
+                    print(f"[samples] 预置演示任务失败 {name}: {e}", file=sys.stderr)
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True, name="seed-demo-tasks").start()

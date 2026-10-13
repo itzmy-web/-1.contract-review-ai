@@ -229,9 +229,15 @@ def list_tasks() -> list[ReviewTask]:
 
 
 def tasks_of_owner(owner: str) -> list[ReviewTask]:
-    """某账号的历史任务（按创建时间倒序）；owner 为空表示不限定（演示模式）。"""
+    """某账号的历史任务（按创建时间倒序）。
+
+    owner 为空 = 不限定（演示模式，返回全部）；
+    否则返回「该账号的任务」+「未归属任何账号的任务」——后者是系统预置 / 导入的
+    公共任务，换一个登录身份也应该看得见，否则演示时切个角色就"历史记录空了"。
+    """
     with LOCK:
-        items = [t for t in TASKS.values() if (not owner or t.owner == owner)]
+        items = [t for t in TASKS.values()
+                 if (not owner or t.owner == owner or not t.owner)]
         return sorted(items, key=lambda t: t.created_at, reverse=True)
 
 
