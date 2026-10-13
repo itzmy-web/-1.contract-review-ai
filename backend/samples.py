@@ -288,7 +288,12 @@ def _write_image(path: str, title: str, body: str):
 
 
 def seed_samples(samples_dir: str) -> dict:
-    """生成示例合同并注册到 store.SAMPLES，返回注册表。"""
+    """生成示例合同并注册到 store.SAMPLES，返回注册表。
+
+    已存在的样例文件不重复生成：docx 是 zip（内含写入时间戳）、pdf 含创建时间，
+    每次生成字节都不同，无条件重写会让工作区每次启动都变脏（git 持续 churn），
+    也白白拖慢启动。需要强制重建某个样例时，删除该文件后重启即可。
+    """
     from . import store
     os.makedirs(samples_dir, exist_ok=True)
     for key, spec in CONTRACTS.items():
@@ -297,14 +302,19 @@ def seed_samples(samples_dir: str) -> dict:
                 "applicant": spec["applicant"]}
         if spec.get("docx"):
             p = os.path.join(samples_dir, f"{key}.docx")
-            _write_docx(p, spec["title"], body)
+            if not os.path.exists(p):
+                _write_docx(p, spec["title"], body)
             store.SAMPLES[f"{key}.docx"] = {"path": p, **meta}
         if spec.get("pdf"):
             p = os.path.join(samples_dir, f"{key}.pdf")
-            _write_pdf(p, spec["title"], body)
+            if not os.path.exists(p):
+                _write_pdf(p, spec["title"], body)
             store.SAMPLES[f"{key}.pdf"] = {"path": p, **meta}
         if spec.get("image"):
             p = os.path.join(samples_dir, f"{key}.png")
+            if os.path.exists(p):
+                store.SAMPLES[f"{key}.png"] = {"path": p, **meta}
+                continue
             try:
                 _write_image(p, spec["title"], body)
                 store.SAMPLES[f"{key}.png"] = {"path": p, **meta}
