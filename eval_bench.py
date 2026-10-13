@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""OCR 识别自动评测脚本。
+r"""OCR 识别自动评测脚本。
 
 用法：
   1. 编辑同目录 benchmark_answers.json，为每张图填写标准答案（expect 字段，留空=不判）
@@ -31,16 +31,23 @@ FIELDS = [
 
 
 def match(kind, got, want):
-    """字段比对：金额按数值，其余按精确相等（strip）。"""
+    """字段比对：金额按数值，其余按精确相等（strip）。
+
+    标准答案为空的字段 → 返回 None（调用方据此跳过，不计入分母）。
+    注意：空值判断必须在最前面。此前 amount 分支先 return，导致未标注的
+    金额字段走了「0 对 0」恒真比较、被当成绩效命中，凭空抬高准确率。
+    """
+    if want in ("", None):
+        return None
     if kind == "amount":
         try:
             return abs(float(got or 0) - float(want or 0)) < 0.5
         except Exception:
             return False
     g = (got or "").strip()
-    w = (want or "").strip()
+    w = str(want).strip()
     if not w:
-        return None  # 标准答案为空 → 该字段不计入
+        return None
     if kind == "performance_period":
         # 期限字段按"包含关键子串"放宽：任一非空片段命中即可
         return bool(g and w) and (g in w or w in g)

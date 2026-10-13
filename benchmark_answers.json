@@ -1,103 +1,88 @@
 {
-  "说明": "人工标注的标准答案：key=图片文件名，value=期望抽取的字段。不适用/无法判定的字段留空字符串或省略，评测时该字段不计入准确率分母。",
+  "说明": "人工标注的标准答案：key=图片文件名，value=期望抽取的字段。留空字符串或省略 = 该字段不计入分母。标注口径：仅当图片上能明确读出该字段时才填写；手写、被印章遮挡、模糊不可辨的一律留空，避免把标注误差算到系统头上。",
   "samples": [
     {
-      "file": "2b0630f7020c213bf0064df12054d140.jpg",
+      "file": "d6abec48895576ca5cb87c041df5d0cd.jpg",
       "level": "S",
+      "note": "建设工程合同封面（印刷清晰）",
       "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "",
-        "counterparty": "上海知飞航空科技有限公司",
-        "credit_code": "",
-        "amount": 13000,
-        "currency": "人民币",
-        "performance_period": "2025年3月10日至2025年9月1日"
+        "contract_no": "JSJS-20250509B8",
+        "counterparty": "湖北玖晟建设有限公司"
       }
     },
     {
-      "file": "2f8c8669a1b039cc9b295d06e9de0d3b.jpg",
-      "level": "A",
-      "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "",
-        "counterparty": "",
-        "credit_code": "",
-        "amount": 0,
-        "currency": "",
-        "performance_period": ""
-      }
-    },
-    {
-      "file": "04e8aa4c231f76ada3e242ba4c6e1f12.jpg",
-      "level": "A",
-      "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "",
-        "counterparty": "",
-        "credit_code": "",
-        "amount": 0,
-        "currency": "",
-        "performance_period": ""
-      }
-    },
-    {
-      "file": "34d06fc905b1474a8d9532477827b12e.jpg",
+      "file": "7dcea8f532a63bfee94f2b8df17e0610.jpg",
       "level": "S",
+      "note": "建设工程合同·合同造价页（印刷清晰）",
       "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "洛阳华澄机床设备有限公司",
-        "counterparty": "洛阳突元机械有限公司",
-        "credit_code": "914103037982097691",
-        "amount": 33200,
-        "currency": "人民币",
-        "performance_period": ""
+        "amount": 4392440.0,
+        "currency": "人民币"
       }
     },
     {
-      "file": "7757010c217689779c8b2b8a5762de28.png",
+      "file": "8d1217481642ba72003ff9384e26d9ca.jpg",
+      "level": "S",
+      "note": "建设工程合同·双方信息表（印刷清晰）",
+      "expect": {
+        "counterparty": "湖北玖晟建设有限公司",
+        "credit_code": "914201020866320167"
+      }
+    },
+    {
+      "file": "00d1e0801da4f2fa518821052f8829fb.jpg",
       "level": "A",
+      "note": "保洁服务合同封面（印刷清晰，乙方名称被印章遮挡）",
       "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "",
-        "counterparty": "",
-        "credit_code": "",
-        "amount": 0,
-        "currency": "",
-        "performance_period": ""
+        "subject_name": "贵州太平工贸有限责任公司"
       }
     },
     {
-      "file": "a162ab84e43d2fe7445a0480828e4be2.png",
-      "level": "B",
+      "file": "2a3aeb3b24075552d38545e7edafba31.jpg",
+      "level": "A",
+      "note": "保洁服务合同·合同期限页（印刷清晰）",
       "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "安徽一八一九企业孵化器管理有限公司",
-        "counterparty": "",
-        "credit_code": "",
-        "amount": 0,
-        "currency": "",
-        "performance_period": ""
+        "performance_period": "2023年6月16日至2024年6月15日"
       }
     },
     {
-      "file": "d8c2520121a31c17bbcf21140a0c1183.png",
+      "file": "3ced4fd32409141db32241d8fbb26d3d.jpg",
       "level": "B",
+      "note": "合作协议首页（甲方名印刷，乙方名为手写）",
       "expect": {
-        "contract_no": "",
-        "department": "",
-        "subject_name": "",
-        "counterparty": "池州中迪汽车销售服务有限公司",
-        "credit_code": "",
-        "amount": 5000,
-        "currency": "",
-        "performance_period": ""
+        "subject_name": "长沙狼峰科技有限公司"
       }
+    },
+    {
+      "file": "62b4d9654bf3d6276bb0740226ea61ce.jpg",
+      "level": "B",
+      "note": "直播带货合同首页（日期为手写填写）",
+      "expect": {
+        "performance_period": "2023年7月1日至2024年7月1日"
+      }
+    },
+    {
+      "file": "47be9b04e300ab92b37bcb145ae40723.jpg",
+      "level": "C",
+      "note": "保洁服务合同尾页（无前述字段）",
+      "expect": {}
+    },
+    {
+      "file": "7528fc060e1314ead0ce775c32286072.jpg",
+      "level": "C",
+      "note": "直播带货合同续页（无前述字段）",
+      "expect": {}
+    },
+    {
+      "file": "fbd203a4967b8ddcd012ea2caf60560f.jpg",
+      "level": "C",
+      "note": "合作协议续页（无前述字段）",
+      "expect": {}
+    },
+    {
+      "file": "c1cf8fd3617dd0f74b2ead8d926246bd.jpg",
+      "level": "C",
+      "note": "保洁服务合同签署页（甲方名被印章遮挡）",
+      "expect": {}
     }
   ]
 }

@@ -148,8 +148,10 @@ def _norm_currency(word: str | None) -> str | None:
 def _extract_amount(doc_text: str) -> tuple[float | None, str | None]:
     """返回 (金额, 币种)。优先阿拉伯数字，其次中文大写。"""
     # 1) 阿拉伯数字：合同金额[：:]? 币种? ¥? 数字 元
+    #    标签覆盖真实合同常见表述（建设工程类常写「总造价」「包干价」），分隔符兼容「为」。
     m = re.search(
-        r"(?:总金额|合同金额|合同总价|价款|金额)[：:]?\s*(人民币|美元|USD|EUR|¥|￥)?"
+        r"(?:总金额|合同金额|合同总价|总造价|造价|包干价|总价|价款|金额)[：:为]?\s*"
+        r"(人民币|美元|USD|EUR|¥|￥)?"
         r"\s*([¥￥]?\s*[\d,]+(?:\.\d+)?)\s*元",
         doc_text,
     )
@@ -173,8 +175,9 @@ def _extract_amount(doc_text: str) -> tuple[float | None, str | None]:
 def extract_metadata(doc_text: str) -> ContractMeta:
     meta = ContractMeta()
 
-    # 统一社会信用代码（18 位）
-    m = re.search(r"统一社会信用代码[：:]\s*([0-9A-Z]{18})", doc_text)
+    # 统一社会信用代码（18 位）；真实合同也常写作「纳税人识别号 / 税号」
+    m = re.search(r"(?:统一社会信用代码|纳税人识别号|纳税人识别码|税号|信用代码)"
+                  r"[：:]\s*([0-9A-Z]{15,20})", doc_text)
     if m:
         meta.credit_code = m.group(1)
 
@@ -189,22 +192,59 @@ def extract_metadata(doc_text: str) -> ContractMeta:
         meta.department = m.group(1).strip()
 
     # 主体名称：甲方=我方(签约主体)，乙方=相对方（PRD 2.4.8 报告基本信息）
-    # 兼容「甲方名称」「甲方：」「甲方 」、无冒号空格分隔；
-    # 兼容真实合同的别名写法：委托方（甲方）/ 承揽方（乙方）/ 出租方 / 承租方 / 受托方 等
+    # 兼容「甲方名称」「甲方：」「甲方（单位）：」「甲方 」等写法；
+    # 兼容真实合同的别名写法：委托方（甲方）/ 承揽方（乙方）/ 出租方 / 承租方 等。
     _PARTY_ALIASES = {
         "甲方": ["委托方（甲方）", "委托方(甲方)", "甲方", "出租方", "购买方"],
         "乙方": ["承揽方（乙方）", "承揽方(乙方)", "乙方", "承租方", "受托方", "销售方", "供货方"],
     }
 
+    # 名称合理性校验（实测必要）：
+    #   「甲方 / 乙方」在真实合同里同样频繁出现在条款正文中（「甲方应按…」），
+    #   若照原样截取，会把整句当成主体名 —— 实测抓到「在工作中受伤害」「同专用章」
+    #   「有权终止合作协议」等噪声，同时也漏掉「甲方：（发包方）」换行后才是公司名的版式。
+    #   因此：先剥掉行首括注 → 同行/次行取候选 → 必须「像名称」才采用。
+    _NAME_RE = re.compile(r"[\u4e00-\u9fa5A-Za-z0-9·．.&＆（）()\-]{2,40}")
+    _NAME_SUFFIX = re.compile(
+        r"(公司|集团|厂|店|中心|事务所|银行|医院|学校|大学|学院|研究院|研究所|合作社"
+        r"|商行|超市|酒店|宾馆|物业|工程队|门市部|经营部|服务部|工作室|委员会|管理局)$")
+    _NAME_NOISE = re.compile(
+        r"[，。；;、:：]|不承担|不负责|应当|应按|有权|承担|负责|任何|义务|权利"
+        r"|专用章|盖章|签字|签章|发包方|承包方|委托方|承租方|受托方|供货方|销售方"
+        r"|受伤害|工作中|签订|之日起|第一|第二|第三")
+
+    def _clean_name(s: str) -> str:
+        """去掉行首括注（「（发包方）」「(甲方)」）与两端空白。"""
+        return re.sub(r"^[（(][^）)]{0,12}[）)]\s*", "", (s or "").strip()).strip()
+
+    def _ok_name(s: str) -> bool:
+        """候选是否像「主体名称」：形制合法 + 无条款噪声 + 带实体后缀或本身够短（人名）。"""
+        s = _clean_name(s)
+        if not s or not _NAME_RE.fullmatch(s):
+            return False
+        if _NAME_NOISE.search(s):
+            return False
+        return bool(_NAME_SUFFIX.search(s)) or len(s) <= 6
+
     def _party(label: str):
         for lbl in _PARTY_ALIASES.get(label, [label]):
-            for pat in (
-                rf"{lbl}(?:名称)?[：:]\s*([\u4e00-\u9fa5A-Za-z0-9·（）()]{{2,40}}?)(?:\s|，|。|\n|（|$)",
-                rf"{lbl}\s+([\u4e00-\u9fa5A-Za-z0-9·（）()]{{2,40}}?)(?:\s|，|。|\n|（|$)",
-            ):
-                mm = re.search(pat, doc_text)
-                if mm:
-                    return mm.group(1).strip()
+            # 形式一：标签 + 可选括注 + 冒号（「甲方：」「甲方（单位）：」「甲方名称：」）
+            for m in re.finditer(
+                    rf"{lbl}(?:名称)?(?:[（(][^）)]{{0,10}}[）)])?[：:][ \t]*([^\n]*)", doc_text):
+                cand = _clean_name(m.group(1))
+                if _ok_name(cand):
+                    return cand
+                # 冒号后为空 / 只有括注 → 取紧随其后的第一个非空行（真实合同常见版式）
+                for line in doc_text[m.end():].split("\n")[1:]:
+                    if not line.strip():
+                        continue
+                    if _ok_name(line):
+                        return line
+                    break       # 下一非空行也不是名称 → 放弃这处，继续找下一处匹配
+            # 形式二：无冒号，标签后接空白（「甲方 某某公司」）
+            m = re.search(rf"{lbl}[ \t]+([^\n]*)", doc_text)
+            if m and _ok_name(m.group(1)):
+                return _clean_name(m.group(1))
         return None
 
     party_a, party_b = _party("甲方"), _party("乙方")

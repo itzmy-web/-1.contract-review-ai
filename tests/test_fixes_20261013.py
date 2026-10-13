@@ -214,3 +214,57 @@ def test_register_scrypt_and_login_auto_upgrade():
     upgraded = M.USERS["legacy_user"]["password"]
     assert upgraded.startswith("scrypt$"), "旧格式账号登录后应自动升级"
     assert M.verify_password(upgraded, "oldpass") is True
+
+
+# ---------------- P2 OCR 评测与抽取（2026-10-13 真实照片实测修复） ----------------
+def test_bench_match_skips_unannotated_amount():
+    """评测脚本 bug：amount 分支先于空值判断 return，未标注金额会「0 对 0」恒真被计为命中。"""
+    sys.path.insert(0, ROOT)
+    from eval_bench import match
+    assert match("amount", 0, "") is None, "未标注（无标准值）必须跳过，不得计入分母"
+    assert match("amount", None, None) is None
+    assert match("amount", 4392440.0, 4392440.0) is True
+    assert match("amount", 100, 200) is False
+
+
+def test_party_name_rejects_clause_prose():
+    """真机实测：旧正则会把条款正文当主体名（「在工作中受伤害」「同专用章」「有权终止合作协议」）。"""
+    from backend.parsers import extract_metadata
+    text = ("合作协议\n甲方：\n乙方自行承担，甲方不承担任何责任；\n"
+            "双方盖章\n甲方（盖章）\n乙方（签字）")
+    meta = extract_metadata(text)
+    for bad in ("在工作中受伤害", "同专用章", "有权终止合作协议", "（发包方）"):
+        assert meta.subject_name != bad
+        assert meta.counterparty != bad
+
+
+def test_party_name_reads_next_line_after_parenthetical():
+    """真机版式：`甲方：（发包方）` 换行后才是公司名，须取次行。"""
+    from backend.parsers import extract_metadata
+    text = ("保洁服务合同\n甲方：（发包方）\n贵州太平工贸有限责任公司\n"
+            "乙方：（承包方）\n贵州燕熙清洁技术服务有限公司\n签订地点：贵州安顺")
+    meta = extract_metadata(text)
+    assert meta.subject_name == "贵州太平工贸有限责任公司"
+    assert meta.counterparty == "贵州燕熙清洁技术服务有限公司"
+
+
+def test_party_name_supports_unit_qualifier_form():
+    """真机版式：`甲方（单位）：某某公司`（标签与冒号之间有括注）。"""
+    from backend.parsers import extract_metadata
+    meta = extract_metadata("合作协议\n甲方（单位）：长沙狼峰科技有限公司\n乙方（个人）：张三")
+    assert meta.subject_name == "长沙狼峰科技有限公司"
+
+
+def test_credit_code_accepts_taxpayer_id_label():
+    """真实合同常写「纳税人识别号」而非「统一社会信用代码」。"""
+    from backend.parsers import extract_metadata
+    meta = extract_metadata("纳税人识别号：914201020866320167")
+    assert meta.credit_code == "914201020866320167"
+
+
+def test_amount_supports_construction_wording():
+    """建设工程合同用「包干总造价为 ¥…元」，旧模式只认「合同金额/价款」。"""
+    from backend.parsers import extract_metadata
+    meta = extract_metadata("3.1本工程包干总造价为￥4392440.00元（大写：肆佰叁拾玖万贰仟肆佰肆拾元整）")
+    assert meta.amount == 4392440.0
+    assert meta.currency == "人民币"
