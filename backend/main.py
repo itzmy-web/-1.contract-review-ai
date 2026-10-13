@@ -115,27 +115,33 @@ def decode_token(token: str):
 
 
 def get_current_user(request: Request):
-    """解析当前用户，支持两种通道：
+    """解析当前用户，支持两种通道（按可用性降级）：
 
     ① **账号通道**：Authorization: Bearer <JWT> —— 注册/登录用户，角色由服务端签发；
     ② **演示通道**：X-Role: <角色键> —— 登录页「登录身份」直接选定身份进入
-       （演示/评审场景，不依赖 JWT 签名密钥，避免部署环境密钥轮换导致全站 401）。
+       （演示/评审场景，不依赖 JWT 签名密钥）。
 
-    演示通道由 DEMO_ROLE_LOGIN 开关控制（默认开）；生产可通过环境变量关闭，
-    关闭后仅接受 JWT，未带令牌一律 401。
+    ⚠ 为什么令牌解不开时不能直接 401：
+    部分部署网关（本项目实测遇到过）会**自行给请求注入 Authorization 头**，
+    把客户端携带的真令牌覆盖掉，于是「服务端刚签发的令牌，下一次请求就被拒绝」。
+    若此时直接 401，整个应用在该环境下彻底不可用、且所有页面静默变空。
+    因此令牌解码失败时降级到演示通道；只有"既没有有效令牌、也没有合法身份"
+    才返回 401。演示通道可用 `DEMO_ROLE_LOGIN=0` 关闭，关闭后即为纯 JWT 硬鉴权。
     """
     auth = (request.headers.get("Authorization") or "").strip()
-    if auth.startswith("Bearer "):
+    has_bearer = auth.startswith("Bearer ")
+    if has_bearer:
         payload = decode_token(auth[7:].strip())
         if payload:
             return payload
-        raise HTTPException(401, "登录已失效，请重新登录")
     if DEMO_ROLE_LOGIN:
         role = (request.headers.get("X-Role") or "").strip()
         if role in ROLE_PERMS:
             return {"sub": role, "role": role,
                     "name": ROLE_PERMS[role].get("person") or ROLE_PERMS[role]["name"],
                     "demo": True}
+    if has_bearer:
+        raise HTTPException(401, "登录已失效，请重新登录")
     raise HTTPException(401, "未登录：请先选择登录身份，或使用账号登录")
 
 

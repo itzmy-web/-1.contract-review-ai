@@ -51,14 +51,40 @@ def test_demo_channel_rejects_missing_or_forged_role():
         assert ei.value.status_code == 401
 
 
-def test_invalid_jwt_does_not_fall_back_to_demo():
-    """带了坏令牌就不能靠 X-Role 蒙混过关，必须 401 重新登录。"""
+def test_invalid_jwt_alone_is_rejected():
+    """只有坏令牌、没有合法身份 → 401（不能凭"带了令牌"就放行）。"""
     from fastapi import HTTPException
+
     class _Bad:
-        headers = {"Authorization": "Bearer not.a.token", "X-Role": "admin"}
+        headers = {"Authorization": "Bearer not.a.token"}
+
     with pytest.raises(HTTPException) as ei:
         M.list_tasks(_Bad())
     assert ei.value.status_code == 401
+
+
+def test_invalid_jwt_falls_back_to_demo_role():
+    """坏令牌 + 合法身份 → 按演示通道放行。
+
+    这是本项目的血泪教训：部署网关会自行注入 Authorization 头把真令牌顶掉，
+    若这里硬 401，线上就变成"自己签发的令牌自己拒绝"、所有页面静默变空。
+    安全性不受损：X-Role 本身在演示模式下就是公开可选的，关掉 DEMO_ROLE_LOGIN 后
+    这条降级路径一并失效。
+    """
+    class _BadPlusRole:
+        headers = {"Authorization": "Bearer not.a.token", "X-Role": "admin"}
+
+    M.list_tasks(_BadPlusRole())          # 不抛异常即通过
+
+
+def test_valid_jwt_takes_precedence_over_demo_role():
+    """真实令牌优先于 X-Role，避免演示身份覆盖已登录用户的真实角色。"""
+    class _Both:
+        headers = {"Authorization": f"Bearer {M.create_token('real_user', 'legal', '王五')}",
+                   "X-Role": "admin"}
+
+    user = M.get_current_user(_Both())
+    assert user["role"] == "legal" and user["sub"] == "real_user"
 
 
 def test_demo_channel_still_enforces_permission_matrix():
