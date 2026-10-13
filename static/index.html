@@ -510,9 +510,12 @@
     .lg-head .t1 { font-size:25px; }
     .orbit { height:246px; }
   }
-  .lg-right { flex:1; display:flex; align-items:center; justify-content:center; padding:44px 40px;
-    background:var(--surface); }
-  .lg-card { width:100%; max-width:380px; }
+  /* 右侧登录区：内容超高（例如展开注册面板）时必须可滚动，否则底部按钮点不到。
+     竖排 flex + 子项 margin:auto 是「安全居中」写法：内容不满屏时上下居中，
+     内容超出时 auto 外边距归零、不会把顶部裁掉，滚动条可到底。 */
+  .lg-right { flex:1; display:flex; flex-direction:column; align-items:center; padding:44px 40px;
+    background:var(--surface); overflow-y:auto; overscroll-behavior:contain; }
+  .lg-card { width:100%; max-width:380px; flex:0 0 auto; margin:auto 0; }
   .lg-card h2 { font-family:var(--font-serif); font-size:26px; font-weight:600; margin:0 0 7px;
     color:var(--ink); letter-spacing:.08em; }
   .lg-card .sub { color:var(--ink-3); font-size:12px; margin:0 0 32px; letter-spacing:.24em; }
@@ -1788,7 +1791,11 @@ function renderQRs(){
 /* 注册新账号 */
 function toggleReg(){
   const el = document.getElementById('lg-reg');
-  if (el) el.style.display = el.style.display === 'block' ? 'none' : 'block';
+  if (!el) return;
+  const open = el.style.display !== 'block';
+  el.style.display = open ? 'block' : 'none';
+  /* 展开后把「注册并登录」按钮滚进视野（登录区本身可滚动） */
+  if (open) setTimeout(() => { try { el.scrollIntoView({block:'nearest', behavior:'smooth'}); } catch(e){} }, 60);
 }
 async function doRegister(){
   if (!(await gateKey())) return;
@@ -2398,9 +2405,9 @@ function toggleChat(){
   if (tip) tip.classList.toggle('hide', _chatOpen);
   if (_chatOpen && !_chatHi) {
     _chatHi = true;
-    bubbleChat('bot', '你好！我是智能助手 🤖\n可以教你用这个系统、解答法律专业问题，也能闲聊。\n点下面的快捷问题，或直接输入～');
+    bubbleChat('bot', '你好！我是智能助手 🤖\n可以教你用这个系统、解答法律专业问题，也能随便聊——\n天气、时间、算数、翻译、常识都可以直接问。\n点下面的快捷问题，或直接输入～');
     document.getElementById('ai-quick').innerHTML =
-      ['怎么上传合同？', '违约金约定多高才有效？', '三个角色分别能做什么？', '解析失败会怎样？']
+      ['怎么上传合同？', '今天北京天气怎么样', '现在几点', '违约金约定多高才有效？', '解析失败会怎样？']
         .map(q => `<button onclick="quickAsk(this)">${q}</button>`).join('');
     const inp = document.getElementById('ai-input'); try { inp.focus(); } catch(e){}
   }
