@@ -49,6 +49,29 @@ def test_toggle_reg_scrolls_panel_into_view():
     assert "scrollIntoView" in body, "展开注册面板后必须滚动到可见区域"
 
 
+def test_scrollbar_is_visible():
+    """右侧只有约 1/4 屏宽，没有可见滚动条用户就不知道这里能滚。"""
+    decl = _rule(".lg-right").replace(" ", "")
+    assert "scrollbar-width:thin" in decl, "缺少 Firefox 细滚动条声明"
+    assert "::-webkit-scrollbar" in HTML, "缺少 WebKit 滚动条样式"
+
+
+def test_wheel_is_forwarded_from_left_panel():
+    """鼠标停在左侧图片上时，滚轮必须被转发给右侧滚动区，否则「整页滚不动」。"""
+    assert "addEventListener('wheel'" in HTML, "缺少滚轮转发监听"
+    assert "nudge(" in HTML, "缺少滚动转发实现"
+    assert "addEventListener('touchmove'" in HTML, "触摸拖动同样要转发"
+
+
+def test_spa_html_is_never_cached():
+    """首页 HTML 必须 no-store，否则用户刷新仍看到旧界面。"""
+    main_py = open(os.path.join(ROOT, "backend", "main.py"), encoding="utf-8").read()
+    i = main_py.find('@app.get("/")')
+    assert i >= 0, "未找到首页路由"
+    body = main_py[i:i + 900]
+    assert "no-store" in body, "首页响应头必须包含 no-store"
+
+
 def test_chat_quick_questions_include_chitchat():
     """闲聊快捷入口要能引导用户问项目外的问题（如天气）。"""
     m = re.search(r"ai-quick'\)\.innerHTML\s*=\s*\[(.*?)\]", HTML, re.S)

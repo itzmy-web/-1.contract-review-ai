@@ -514,7 +514,14 @@
      竖排 flex + 子项 margin:auto 是「安全居中」写法：内容不满屏时上下居中，
      内容超出时 auto 外边距归零、不会把顶部裁掉，滚动条可到底。 */
   .lg-right { flex:1; display:flex; flex-direction:column; align-items:center; padding:44px 40px;
-    background:var(--surface); overflow-y:auto; overscroll-behavior:contain; }
+    background:var(--surface); overflow-y:auto; overscroll-behavior:contain;
+    scrollbar-width:thin; scrollbar-color:var(--rule-2) transparent; }
+  /* 登录区必须看得见滚动条：否则用户不知道这里能滚，会以为「页面滚不动」 */
+  .lg-right::-webkit-scrollbar { width:10px; }
+  .lg-right::-webkit-scrollbar-track { background:transparent; }
+  .lg-right::-webkit-scrollbar-thumb { background:var(--rule-2); border-radius:99px;
+    border:3px solid var(--surface); }
+  .lg-right::-webkit-scrollbar-thumb:hover { background:var(--ink-3); }
   .lg-card { width:100%; max-width:380px; flex:0 0 auto; margin:auto 0; }
   .lg-card h2 { font-family:var(--font-serif); font-size:26px; font-weight:600; margin:0 0 7px;
     color:var(--ink); letter-spacing:.08em; }
@@ -1797,6 +1804,37 @@ function toggleReg(){
   /* 展开后把「注册并登录」按钮滚进视野（登录区本身可滚动） */
   if (open) setTimeout(() => { try { el.scrollIntoView({block:'nearest', behavior:'smooth'}); } catch(e){} }, 60);
 }
+/* 登录页滚动健壮性：右侧内容区才是滚动容器，但它只占约 1/4 屏宽，
+   鼠标停在左侧图片上时滚轮完全不起作用 —— 用户会以为「整个页面滚不动」。
+   这里把整层登录页的滚轮 / 单指拖动统一转发给右侧滚动区，滚轮在任何位置都有效。 */
+(function(){
+  const lg = document.getElementById('login');
+  if (!lg) return;
+  const scroller = () => lg.querySelector('.lg-right');
+  const nudge = dy => {
+    const r = scroller();
+    if (!r || r.scrollHeight <= r.clientHeight + 1) return false;
+    const before = r.scrollTop;
+    r.scrollTop = before + dy;
+    return r.scrollTop !== before;
+  };
+  lg.addEventListener('wheel', e => {
+    const r = scroller();
+    if (r && r.contains(e.target)) return;      /* 已在滚动区内：交给浏览器原生处理 */
+    if (nudge(e.deltaY)) e.preventDefault();
+  }, {passive:false});
+  let _ty = null;
+  lg.addEventListener('touchstart', e => { _ty = e.touches.length === 1 ? e.touches[0].clientY : null; },
+                      {passive:true});
+  lg.addEventListener('touchmove', e => {
+    const r = scroller();
+    if (_ty === null || e.touches.length !== 1 || !r || r.contains(e.target)) return;
+    const y = e.touches[0].clientY;
+    const dy = _ty - y;
+    _ty = y;
+    if (nudge(dy)) e.preventDefault();
+  }, {passive:false});
+})();
 async function doRegister(){
   if (!(await gateKey())) return;
   const u = (document.getElementById('reg-user').value || '').trim();

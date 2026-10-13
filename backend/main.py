@@ -375,7 +375,17 @@ def _mark_modified(task: ReviewTask, actor: str) -> None:
 # ---------------- 页面 ----------------
 @app.get("/")
 def index():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+    """首页 HTML 一律不缓存。
+
+    前端是单文件 SPA，样式与脚本都内联在 index.html 里；一旦被浏览器/网关缓存，
+    用户会继续看到旧界面（典型症状：「明明改了样式，用户还说没变化」）。
+    这里显式声明 no-store，保证刷新即拿到最新版本。
+    """
+    return FileResponse(str(STATIC_DIR / "index.html"), headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
 
 
 # ---------------- 任务接口 ----------------
