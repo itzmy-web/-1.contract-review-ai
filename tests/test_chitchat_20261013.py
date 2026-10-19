@@ -196,7 +196,7 @@ def test_assistant_answers_weather_instead_of_greet(monkeypatch):
     d = assistant.chat("今天北京天气怎么样")
     assert d["mode"] == "tool" and d["topic"] == "weather"
     assert "晴" in d["reply"] and "13.8℃" in d["reply"]
-    assert "我是合同审批审查系统的智能助手" not in d["reply"]
+    assert "我是法衡律鉴的智能助手" not in d["reply"]
 
 
 def test_assistant_weather_works_without_llm(monkeypatch):

@@ -1,4 +1,4 @@
-# 合同审批审查系统 - 生产镜像
+# 法衡律鉴 - 生产镜像
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \

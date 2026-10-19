@@ -1,4 +1,4 @@
-"""合同审批审查系统 后端主服务（PRD 2.4 全模块）。
+"""法衡律鉴 后端主服务（PRD 2.4 全模块）。
 
 启动：uvicorn backend.main:app --reload --port 8010
 """
@@ -243,7 +243,7 @@ def _check_ext(filename: str) -> str:
                                  f"支持 {' / '.join(sorted(ALLOWED_EXTS))}")
     return ext
 
-app = FastAPI(title="合同审批审查系统", version="1.0")
+app = FastAPI(title="法衡律鉴", version="1.0")
 
 # 并发审查：同时最多 N 份合同在跑，其余排队。
 # 旧实现用全局互斥锁 → 多任务完全串行（上传 5 份要排 5 轮）；

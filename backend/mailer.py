@@ -256,7 +256,7 @@ def build_text(task) -> str:
         "2. 扫描件请保证清晰、页面完整；",
         "3. 处理后回到系统「审查大盘」重新上传，或在工作台点「重新审查」。",
         "",
-        "—— 合同审批审查系统 · 自动通知（请勿直接回复）",
+        "—— 法衡律鉴 · 自动通知（请勿直接回复）",
     ])
 
 
@@ -284,7 +284,7 @@ def build_html(task) -> str:
    box-shadow:0 2px 10px rgba(16,24,40,.07)">
     <div style="background:linear-gradient(135deg,#b3352f,#8f2521);padding:20px 22px;color:#fff">
       <div style="font-size:16px;font-weight:600;letter-spacing:.02em">合同上传失败通知</div>
-      <div style="font-size:12px;opacity:.82;margin-top:5px">合同审批审查系统 · 自动告警</div>
+      <div style="font-size:12px;opacity:.82;margin-top:5px">法衡律鉴 · 自动告警</div>
     </div>
     <div style="padding:20px 22px 6px">
       <p style="margin:0 0 15px;font-size:13.5px;color:#374151;line-height:1.75">
@@ -325,7 +325,7 @@ def send(subject: str, text: str, html: str | None = None, to: str | None = None
         if html:
             m.attach(MIMEText(html, "html", "utf-8"))
         m["Subject"] = Header(subject, "utf-8")
-        m["From"] = formataddr((str(Header("合同审批审查系统", "utf-8")), user()))
+        m["From"] = formataddr((str(Header("法衡律鉴", "utf-8")), user()))
         m["To"] = rcpt
         rcpts = [r.strip() for r in rcpt.replace("；", ";").replace(",", ";").split(";") if r.strip()]
         with smtplib.SMTP_SSL(host(), port(), timeout=15) as s:
@@ -391,5 +391,5 @@ def test_connection() -> tuple[bool, str]:
             f'<p style="color:#4b5563;font-size:14px;line-height:1.8">'
             f'收到这封邮件，说明「合同上传失败 → QQ 邮箱告警」通道已打通。<br>'
             f'发送时间：{now}</p>'
-            f'<p style="color:#9aa2af;font-size:12px">合同审批审查系统</p></div>')
+            f'<p style="color:#9aa2af;font-size:12px">法衡律鉴</p></div>')
     return send(subject, text, html)
